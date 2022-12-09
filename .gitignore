@@ -1,0 +1,7 @@
+co2data
+co2data/*.nc4
+fig/*.png
+
+.ipynb_checkpoints/
+test*
+

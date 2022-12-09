@@ -1,0 +1,13 @@
+name: oco2py310
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - matplotlib
+  - basemap
+  - pillow
+  - basemap-data-hires
+  - xarray
+  - pydantic
+  - tqdm
