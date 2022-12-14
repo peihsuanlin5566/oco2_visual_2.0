@@ -26,8 +26,18 @@ This repository places the tools for easily generating CO2 observation map with 
 3. Run `conda activate oco2` to activate the `oco2` environment. 
 4. create a `fig` folder for storing the output figures: 
 ```
-cd oco2_visual
-mkdir fig
+$ cd oco2_visual
+$ mkdir fig
+```
+5. create `snowflack_config.json` which contains the infromation for connecting to the databaase: 
+```
+$ cat snowflack_config.json 
+{   
+    "account": "myorganization-myaccount",
+    "user" : "testuser1",
+    "password" : "0123456",
+    "role": "myrole"
+}
 ```
 
 

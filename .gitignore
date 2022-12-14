@@ -4,4 +4,6 @@ fig/*.png
 
 .ipynb_checkpoints/
 test*
-
+test/*
+snowflack_config.json
+plotco2map_local_example.ipynb

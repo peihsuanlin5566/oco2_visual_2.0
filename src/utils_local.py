@@ -1,28 +1,24 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 from datetime import datetime
-import matplotlib.dates
 from glob import glob 
 from mpl_toolkits.axes_grid1 import make_axes_locatable 
 from mpl_toolkits.basemap import Basemap
+import xarray as xr
 import matplotlib as mpl
 import os
 from pydantic import BaseModel
+# from pathlib import Path
 from typing import List, Dict
 from tqdm import tqdm 
-# ---- sql query -----
-from snowflake.sqlalchemy import URL
-from sqlalchemy import create_engine
-import pandas as pd
-import json
-import numpy as np 
+
+# DIR_PATH = Path(os.path.dirname(os.path.abspath(__file__)))
 
 class Data(BaseModel):
-    sounding_id: float
-    longitude: float
-    latitude: float
-    time: str
-    xco2: float
+    xco2: List
+    latitude: List
+    longitude: List
+    time: List
 
 class Datas(BaseModel): 
     oco2_data_list: List[Data] = []
@@ -32,68 +28,43 @@ class Datas(BaseModel):
     # time: List
     
     @classmethod
-    def select(cls, 
-        time_start: str, 
-        time_last: str, 
-        fov_lon: List =[139.3, 140.4],
-        fov_lat: List =[35.15, 36.05], 
-        limit=None
-    ):
-        """send select query to the database
+    def read_from_nc4(cls, fn_list: List[str]):
+        """read the netcdf4 data
     
         Args:
-            time_start: 
-            time_last: 
-            fov_lon: 
-            fov_lat: 
+            fn_list: List that contains paths to the OCO2 data file
 
         returns: 
-            oco2_data_list: rows containing the query results    
+            xco2: XCO2 data
+            latitude, longitude: location 
+            time: date & time when OCO2 observation is recorded (which is not used when visualizing the data)
         """
         oco2_data_list = []
-        with open('snowflack_config.json') as f: 
-            config = json.load(f)
+        for fn in tqdm(fn_list): 
+            try:
+                with xr.open_dataset(fn) as ds:
+                    xco2 = ds.xco2.values.tolist()
+                    latitude = ds.latitude.values.tolist()
+                    longitude = ds.longitude.values.tolist()
+                    time = ds.time.values.tolist()
 
-        engine = create_engine(URL(
-            account = config['account'],
-            user = config['user'],
-            password = config['password'],
-            database = 'CO2_SATELLITE',
-            schema = 'public',
-            warehouse = 'COMPUTE_WH',
-            role=config['role'],
-            numpy=True
-        ))
+                    oco2_data_list.append(Data( 
+                        xco2 = xco2, 
+                        latitude = latitude, 
+                        longitude = longitude, 
+                        time = time, 
+                    ))
+            except ValueError: 
+                # raise ValueError("Error in reading data.")
+                pass 
 
-        if limit == None: 
-            limit_query = ''
-        else: 
-            limit_query = 'LIMIT {}'.format(limit)
-
-        connection = engine.connect()
-        query = ' '.join([
-                'SELECT * FROM CO2_SATELLITE.PUBLIC.CO2_SATELLITE2', 
-                'WHERE ("time" between  \'{}\' and  \'{}\')'.format(time_start, time_last),
-                'and  ("longitude" between {} and {})'.format(fov_lon[0], fov_lon[1] ), 
-                'and  ("latitude" between {} and {})'.format(fov_lat[0], fov_lat[1] ), 
-                limit_query
-            ])  
-        print('query:', query)
-        rows = connection.execute(query).fetchall()
-        for row in rows: 
-            oco2_data_list.append(Data( 
-                sounding_id = float(list(row)[0]), 
-                longitude = list(row)[1], 
-                latitude = list(row)[2 ], 
-                time = str(list(row)[3]), 
-                xco2 = list(row)[4], 
-                ))
-        print('{} queries are returned'.format(len(rows)))
         return cls(oco2_data_list=oco2_data_list)
+
 
 
 class Map(): 
     def __init__(self,
+            path_dir: str, 
             time_start: str, 
             time_last: str,
             xco2_min : float = 380, 
@@ -117,44 +88,57 @@ class Map():
 
         self.time_start2 = ''
 
-        """ query the data according to the specified time and fov
+        """ read the data
         """
-        self.__validate(time_start)
-        self.__validate(time_last)
-        self.oco2_data_list = Datas.select(
-                time_start,
-                time_last, 
-                fov_lon, 
-                fov_lat ).oco2_data_list
+        flist, date_infor = self.__get_filelist(path_dir, time_start, time_last)
+        self.flist = flist
+        self.date_infor = date_infor  
+        if show_flist: 
+            print(flist)
+        self.oco2_data_list = Datas.read_from_nc4(flist).oco2_data_list
 
         """ variables for storing the necessary data in the plotting
         """
-        self.useful_xco2 = []
+        self.useful_file = []
 
+
+    def __get_filelist(self, path_dir: str, time_start: str, time_last: str) -> (List, List): 
+        """ fetch the files (filenames) under a certain folder, with time time within the specified time window
+        Args: 
+            path_dir: path to the folder where data is placed (e.g., path_dir = '../../data/data_xco2/oco2_LtCO2_*.nc4')
+            time_start: start time for the visualizing duration
+            time_last:  end time for the visualizing duration
+
+        Returns: 
+            flist_all: all the filepaths 
+            date_infor_all: date stamp of all the files (datetime.datetime(2014, 9, 6, 0, 0)) 
+        
+        """
+        if path_dir[-1] != '/': 
+            path_dir = path_dir + '/'
+        flist2 = np.array(glob(path_dir+'*.nc4'))
+        date_infor = np.array([ datetime.strptime('20'+ os.path.split(x)[1][-37:-31], '%Y%m%d')  for x in flist2])
+        
+        flist_all = flist2[np.argsort(date_infor)]
+        date_infor_all = np.sort(date_infor)
+
+        self.__validate(time_start)
+        self.__validate(time_last)
+
+        start_time = datetime.strptime(time_start, '%Y-%m-%d')
+        end_time   = datetime.strptime(time_last , '%Y-%m-%d')
+        need_ind  = np.where((date_infor_all <= end_time) * (date_infor_all >=start_time ))[0]
+        
+        flist = [ flist_all[ind] for ind in need_ind ]
+        date_infor = [date_infor_all[ind] for ind in need_ind ]
+
+        return flist, date_infor
 
     def __validate(self, date_text: str):
         try:
             datetime.strptime(date_text, '%Y-%m-%d')
         except ValueError:
             raise ValueError("Incorrect data format, should be YYYY-MM-DD")
-            
-    def set_useful_data(self,): 
-
-        if self.useful_xco2 == []: 
-            self.useful_xco2 = np.zeros(len(self.oco2_data_list))
-            self.useful_sounding_id = np.zeros(len(self.oco2_data_list))
-            self.useful_latitude = np.zeros(len(self.oco2_data_list))
-            self.useful_longitude = np.zeros(len(self.oco2_data_list))
-            self.useful_time = np.zeros(len(self.oco2_data_list), dtype=np.str_) 
-            self.useful_date_infor = np.zeros(len(self.oco2_data_list), dtype=datetime)
-
-            for i, oco2_data_item in enumerate(self.oco2_data_list) : 
-                self.useful_xco2[i] = oco2_data_item.xco2
-                self.useful_sounding_id[i] = oco2_data_item.sounding_id
-                self.useful_latitude[i] = oco2_data_item.latitude
-                self.useful_longitude[i] = oco2_data_item.longitude
-                self.useful_time[i] = oco2_data_item.time
-                self.useful_date_infor[i] = datetime.strptime(oco2_data_item.time[:-4], '%Y-%m-%dT%H:%M:%S.%f') 
 
     def __time_format_transform(self, datetime_string: str) -> str: 
         datetime_stamp = datetime.strptime(datetime_string, '%Y-%m-%d')
@@ -177,39 +161,88 @@ class Map():
             np.arccos(np.sin(lat1) * np.sin(lat2) + np.cos(lat1) * np.cos(lat2) * np.cos(lon1 - lon2))
         )
 
+    def __get_useful_data(self, oco2_data_list: List[Data]) -> (np.array, np.array, np.array, np.array, List, List): 
+        
+        """excluding the loaded data that are out of the specified FOV.
+        Args: 
+            oco2_data_list: oco2 data object list
+
+        """
+        useful_file = []
+        useful_date_infor = []
+        useful_xco2 = np.array([])
+        useful_latitude = np.array([])
+        useful_longitude = np.array([])
+        useful_time = np.array([])     
+
+        for i, oco2_data in enumerate(oco2_data_list): 
+            latitude = np.array(oco2_data.latitude) 
+            longitude = np.array(oco2_data.longitude) 
+            fov_ind = (longitude>=self.fov_lon[0]) * (longitude<=self.fov_lon[1]) * (latitude>=self.fov_lat[0]) * (latitude<=self.fov_lat[1])
+            
+            if np.sum(fov_ind) > 0: 
+                ind = np.where(fov_ind)[0]
+                useful_xco2 =  np.append( useful_xco2, np.array(oco2_data.xco2)[ind]) 
+                useful_time = np.append(useful_time, np.array(oco2_data.time)[ind]) 
+                useful_latitude = np.append(useful_latitude, latitude[ind] ) 
+                useful_longitude = np.append( useful_longitude, longitude[ind]) 
+                useful_file.append(self.flist[i]) 
+                useful_date_infor.append(self.date_infor[i])
+
+        return useful_xco2, useful_time, useful_latitude, useful_longitude, useful_file, useful_date_infor
+
+    def set_useful_data(self,): 
+
+        if self.useful_file == []: 
+            useful_xco2, useful_time, useful_latitude, useful_longitude, useful_file, useful_date_infor = self.__get_useful_data(self.oco2_data_list)
+
+            # set up the data that would be used in the plotting: 
+            # these data are with the data points that falling in the specified fov
+            self.useful_file = useful_file 
+            self.useful_xco2 = useful_xco2
+            self.useful_latitude = useful_latitude
+            self.useful_longitude = useful_longitude
+            self.useful_time = useful_time
+            self.useful_date_infor = useful_date_infor
+
+
 
     def plot_fig_check_value_range(self, mode_2panel=False): 
         
         """ generating a figure for confirming the data range during the year.
         """    
-        if self.useful_xco2 == []: 
+        if self.useful_file == []: 
             self.set_useful_data()
             
         plt.clf()
         plt.close()
         ax = plt.subplot()
 
+
         # legend_timestamp = [ datetime.strftime(date_infor,'%Y-%m-%d') for date_infor in self.useful_date_infor ] 
 
         if len(self.time_start2) == 0 or not mode_2panel : 
-            ax.plot_date(matplotlib.dates.date2num(self.useful_date_infor), 
+            ax.plot(self.useful_time, 
                         self.useful_xco2, 
-                        fmt="o", 
+                        marker='o', 
                         markersize=4 , 
+                        linestyle='none',
                         alpha=0.2, 
                     )
         else: 
-            ax.plot_date(matplotlib.dates.date2num(self.useful_date_infor), 
+            ax.plot(self.useful_time, 
                 self.useful_xco2, 
-                fmt='o', 
+                marker='o', 
                 markersize=4 , 
+                linestyle='none', 
                 label='duration1', 
                 alpha=0.2
             )
-            ax.plot_date(matplotlib.dates.date2num(self.useful_date_infor2), 
+            ax.plot(self.useful_time2, 
                 self.useful_xco22, 
-                fmt='o', 
+                marker='o', 
                 markersize=4 , 
+                linestyle='none', 
                 label='duration2', 
                 alpha=0.2
             )
@@ -250,7 +283,7 @@ class Map():
         cax = divider.append_axes("right", size="5%", pad=0.2)
 
         # load the data
-        if self.useful_xco2 == []: 
+        if self.useful_file == []: 
             self.set_useful_data()
         xco2 = self.useful_xco2
         longitude = self.useful_longitude 
@@ -348,7 +381,7 @@ class Map():
             grid_num: a number denoting how many slices that latitude and longitude should be divided into.
         """
         # load the data
-        if self.useful_xco2 == []: 
+        if self.useful_file == []: 
             self.set_useful_data()
 
         # xco2 = self.useful_xco2
@@ -407,20 +440,25 @@ class Map():
         print('{} is generated.'.format(figname))
 
 
-    def add_map(self, time_start2, time_last2 ): 
+    def add_map(self, path_dir2, time_start2, time_last2 ): 
                 
         """ arguments for plotting the figure
         """
         self.time_start2 = time_start2
         self.time_last2 = time_last2 
 
-        """ query the data
+        """ read the data
         """
-        self.oco2_data_list2 = Datas.select(time_start2, time_last2, self.fov_lon, self.fov_lat ).oco2_data_list
+        flist2, date_infor2 = self.__get_filelist(path_dir2, time_start2, time_last2)
+        self.flist2 = flist2
+        self.date_infor2 = date_infor2  
+        if self.show_flist: 
+            print(flist2)
+        self.oco2_data_list2 = Datas.read_from_nc4(flist2).oco2_data_list
 
         """ variables for storing the necessary data in the plotting
         """
-        self.useful_xco22 = []
+        self.useful_file2 = []
         self.set_useful_data2()
 
 
@@ -429,22 +467,17 @@ class Map():
         if len(self.time_start2) == 0: 
             print('Conduct add_map method first')
         else: 
-            if self.useful_xco22 == []: 
-                self.useful_xco22 = np.zeros(len(self.oco2_data_list2))
-                self.useful_sounding_id2 = np.zeros(len(self.oco2_data_list2))
-                self.useful_latitude2 = np.zeros(len(self.oco2_data_list2))
-                self.useful_longitude2 = np.zeros(len(self.oco2_data_list2))
-                self.useful_time2 = np.zeros(len(self.oco2_data_list2), dtype=np.str_) 
-                self.useful_date_infor2 = np.zeros(len(self.oco2_data_list2), dtype=datetime) 
+            if self.useful_file2 == []: 
+                useful_xco22, useful_time2, useful_latitude2, useful_longitude2, useful_file2, useful_date_infor2 = self.__get_useful_data(self.oco2_data_list2)
 
-                for i, oco2_data_item in enumerate(self.oco2_data_list2) : 
-                    self.useful_xco22[i] = oco2_data_item.xco2
-                    self.useful_sounding_id2[i] = oco2_data_item.sounding_id
-                    self.useful_latitude2[i] = oco2_data_item.latitude
-                    self.useful_longitude2[i] = oco2_data_item.longitude
-                    self.useful_time2[i] = oco2_data_item.time
-                    self.useful_date_infor2[i] = datetime.strptime(oco2_data_item.time[:-4], '%Y-%m-%dT%H:%M:%S.%f') 
-
+                # set up the data that would be used in the plotting: 
+                # these data are with the data points that falling in the specified fov
+                self.useful_file2 = useful_file2
+                self.useful_xco22 = useful_xco22
+                self.useful_latitude2 = useful_latitude2
+                self.useful_longitude2 = useful_longitude2
+                self.useful_time2 = useful_time2
+                self.useful_date_infor2 = useful_date_infor2
 
     def __fig_map_single(self, ax, fov_lon, fov_lat): 
 
