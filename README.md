@@ -29,7 +29,7 @@ This repository places the tools for easily generating CO2 observation map with 
 $ cd oco2_visual
 $ mkdir fig
 ```
-5. create `snowflack_config.json` which contains the infromation for connecting to the databaase: 
+5. create `snowflack_config.json` which contains the information for connecting to the databaase: 
 ```
 $ cat snowflack_config.json 
 {   
