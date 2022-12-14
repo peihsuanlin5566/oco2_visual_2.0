@@ -1,6 +1,7 @@
 co2data
 co2data/*.nc4
 fig/*.png
+src/__pycache__/*
 
 .ipynb_checkpoints/
 test*
