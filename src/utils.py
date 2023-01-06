@@ -13,7 +13,6 @@ from tqdm import tqdm
 # ---- sql query -----
 from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
-import pandas as pd
 import json
 import numpy as np 
 import matplotlib.ticker as mticker
