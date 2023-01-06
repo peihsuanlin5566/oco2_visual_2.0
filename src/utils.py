@@ -16,6 +16,7 @@ from sqlalchemy import create_engine
 import pandas as pd
 import json
 import numpy as np 
+import matplotlib.ticker as mticker
 
 class Data(BaseModel):
     sounding_id: float
@@ -392,6 +393,8 @@ class Map():
         # # adjust the cax tick labels 
         cax_tick_label = cax.get_yticks()
         # cax.set_yticklabels(np.linspace(xco2_min, xco2_max, len(cax_tick_label)))
+        ticks_loc = cax.get_yticks().tolist()
+        cax.yaxis.set_major_locator(mticker.FixedLocator(ticks_loc))
         cax.set_yticklabels(['{0:.0f}'.format(x)  for x in np.linspace(self.xco2_min, self.xco2_max, len(cax_tick_label))])
         cax.set_ylabel('XCO2 (ppm)', fontsize=20)
 
@@ -514,6 +517,7 @@ class Map():
 
         # split the subplots 
         fig, axs = plt.subplots(1,2, figsize=(19,12))
+        fig.set_tight_layout(True)
 
         # plot each subplot
         for ax, z_map in  zip(axs, [z_map1, z_map2] ): 
