@@ -76,7 +76,7 @@ class Map():
             ) -> None:
             
         """ arguments for plotting the figure
-        """
+        """s
         self.time_start = time_start 
         self.time_last = time_last 
         self.xco2_min = xco2_min 

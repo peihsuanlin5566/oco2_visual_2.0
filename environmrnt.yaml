@@ -8,6 +8,7 @@ dependencies:
   - basemap
   - pillow
   - basemap-data-hires
-  - xarray
   - pydantic
   - tqdm
+  - snowflake-connector-python
+  - snowflake-sqlalchemy

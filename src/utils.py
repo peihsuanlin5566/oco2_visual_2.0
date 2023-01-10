@@ -516,7 +516,7 @@ class Map():
                                 self.fov_lon, self.fov_lat,)
 
         # split the subplots 
-        fig, axs = plt.subplots(1,2, figsize=(19,12))
+        fig, axs = plt.subplots(1,2, figsize=(20,20))
         fig.set_tight_layout(True)
 
         # plot each subplot
